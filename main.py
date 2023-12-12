@@ -1,3 +1,4 @@
+import math
 import requests
 import pandas as pd
 from dateutil import parser
@@ -158,6 +159,15 @@ def write_all(data):
     ]
 
 
+def compute_mean():
+    # Extract the subject and subject_avg columns
+    df1 = df[["Subject", "Subject avg"]].drop_duplicates()
+    df2 = df1["Subject avg"]
+    # Convert the subject_avg column to numeric
+    df2 = pd.to_numeric(df2, errors="coerce")
+    return round(df2.mean(), 2)
+
+
 def main():
     cred = get_credentials()
     data = request_data(cred)
@@ -165,6 +175,8 @@ def main():
     # Print a full width dataframe
     pd.set_option("display.max_colwidth", 30)
     print(df)
+    mean = compute_mean()
+    print("Overall mean:", mean)
 
 
 if __name__ == "__main__":
