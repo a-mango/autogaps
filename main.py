@@ -125,7 +125,7 @@ def request_data(cred):
                 )
                 return None
             print("Successfully retrieved GAPS data")
-            return res.content.decode("unicode-escape").replace('\\', "")
+            return re.sub(r"\\", "", res.content.decode("utf-8"))
 
 
 def parse_data(content):
