@@ -98,6 +98,13 @@ def get_credentials():
 
 
 def request_data(cred):
+    """
+    Request the data from GAPS and return it as a string. Exits upon failure.
+
+    :param cred: A keyring.Credential object containing the username and password
+    :return: The HTML content of the GAPS page as a string
+    """
+
     with requests.session() as request:
         print("Connection to GAPS...")
         login_data = {
@@ -129,6 +136,11 @@ def request_data(cred):
 
 
 def parse_data(content):
+    """
+    Parse the GAPS HTML data
+
+    :param content: The GAPS HTML data to parse
+    """
     soup = BeautifulSoup(content, "html.parser")
 
     # Create an dictionary to store the data
