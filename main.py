@@ -1,8 +1,11 @@
+import argparse
 import logging
 import math
+import sys
+
 import requests
 import pandas as pd
-from dateutil import parser
+from dateutil import parser as date_parser
 import re
 import keyring as kr
 import getpass
@@ -24,9 +27,13 @@ RE_BRANCH = r"[A-Z]{3}"
 RE_DATE = r"\d{1,2}\.\d{1,2}\.\d{2,4}"
 RE_STRING = r"[\sA-Za-z]+"
 
+# Pandas setup
 df = pd.DataFrame(
     columns=["Subject", "Subject avg", "Lab", "Course", "Date", "Name", "Grade", "Mean", "Weight"]
 )
+
+# Logger setup
+logging.basicConfig(format='%(levelname)s: %(message)s')
 
 
 def save_credentials():
@@ -79,19 +86,10 @@ def get_credentials():
     except Exception as e:
         logging.error("An unexpected error occurred: %s", e)
 
-    # If the credentials were not found, ask the user to save them
+    # If the credentials are not found, display a message and exit.
     if cred is None:
-        save_credentials()
-        try:
-            cred = kr.get_credential(APP_NAME, "")
-        except kr.errors.KeyringError as e:
-            logging.error("Failed to retrieve credentials from keychain after saving: %s", e)
-        except Exception as e:
-            logging.error("An unexpected error occurred: %s", e)
-
-    # If the credentials are still not found, exit
-    if cred is None:
-        logging.error("Failed to retrieve credentials. Please check your keychain.")
+        logging.error("Failed to retrieve credentials. Please use `./autogaps.py --login` to save your login details "
+                      "to the system keyring.")
         exit(1)
 
     return cred
@@ -189,7 +187,7 @@ def parse_data(content):
             # Handle sub rows
             else:
                 if re.match(RE_DATE, cell.text):  # Parse date
-                    data["date"] = parser.parse(cell.text).strftime("%Y-%m-%d")
+                    data["date"] = date_parser.parse(cell.text).strftime("%Y-%m-%d")
                 elif re.match(RE_STRING, cell.text):  # Parse name
                     # Check if a subtag div.onclick exists
                     if cell.findAll("div", {"id": re.compile(r"long__lm_")}):
@@ -230,7 +228,7 @@ def compute_mean():
     return round(df2.mean(), 2)
 
 
-def main():
+def display_data():
     cred = get_credentials()
     data = request_data(cred)
     parse_data(data)
@@ -239,6 +237,23 @@ def main():
     print(df)
     mean = compute_mean()
     print("Overall mean:", mean)
+
+
+def main():
+    try:
+        opt_parser = argparse.ArgumentParser(description="Fetch grades from the GAPS system.")
+        opt_parser.add_argument("-l", "--login", action="store_true", help="input or replace the login credentials")
+        opt_parser.add_argument("-d", "--daemon", action="store_true", help="run in daemon mode")
+        args = opt_parser.parse_args()
+
+        if args.login:
+            save_credentials()
+        else:
+            display_data()
+
+    except KeyboardInterrupt:
+        print("\nProgram interrupted by user. Exiting...")
+        sys.exit(0)
 
 
 if __name__ == "__main__":
