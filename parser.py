@@ -1,19 +1,28 @@
+"""
+This script is used to parse data from the GAPS system. It includes functions to request data, parse the HTML content,
+extract tables from the HTML, convert these tables to pandas DataFrames, and convert these DataFrames to objects.
+
+The main functions in this script are:
+- request_data: Requests the data from GAPS and returns it as a string.
+- parse: Parses the HTML content and returns a list of objects.
+- extract_tables: Extracts tables from the HTML content.
+- table_to_df: Converts the extracted tables to pandas DataFrames.
+- df_to_object: Converts the DataFrames to objects.
+
+This script uses the following libraries:
+- requests: To send HTTP requests.
+- BeautifulSoup: To parse the HTML content.
+- pandas: To work with the data in a tabular format.
+- re: To use regular expressions.
+- io: To handle the StringIO object.
+"""
+
 import config
 import requests
 import re
 from bs4 import BeautifulSoup
 import pandas as pd
-from dateutil import parser as date_parser
-
-RE_FLOAT = r"\d\.\d{1,2}"
-RE_BRANCH = r"[A-Z]{3}"
-RE_DATE = r"\d{1,2}\.\d{1,2}\.\d{2,4}"
-RE_STRING = r"[\sA-Za-z]+"
-
-# Pandas setup
-df = pd.DataFrame(
-    columns=["Subject", "Subject avg", "Lab", "Course", "Date", "Name", "Grade", "Mean", "Weight"]
-)
+from io import StringIO
 
 
 def request_data(cred):
@@ -54,96 +63,119 @@ def request_data(cred):
             return re.sub(r"\\", "", res.content.decode("utf-8"))
 
 
-def parse_data(content):
+def parse(content):
     """
-    Parse the GAPS HTML data
 
-    :param content: The GAPS HTML data to parse
+    :param content: The HTML content of the page, unescaped and containing a valid HTML document tree
+    :return: An array of objects containing the course name, grade, assessments grade plus data and practical work grade
+             and data
     """
+
     soup = BeautifulSoup(content, "html.parser")
+    tables = extract_tables(soup)
+    dfs = table_to_df(tables)
+    objects = []
 
-    # Create an dictionary to store the data
+    for df in dfs:
+        objects.append(df_to_object(df))
 
-    rows = soup.find_all("tr")
-    data = {
-        "subject": "",
-        "subject_avg": None,
-        "lab": None,
-        "course": None,
-        "date": "",
-        "name": "",
-        "mean": "",
-        "weight": "",
-        "grade": "",
-    }
+    return objects
 
-    for i in range(len(rows)):
-        row = rows[i]
 
-        # Iterate on cells
-        cells = row.find_all("td")
-        for cell in cells:
-            # Handle header row
-            if cell.text in ["date", "descriptif", "moyenne", "coef.", "note"]:
-                pass
-            elif "poids" in cell.text:  # Parse subheader
-                # Handle "project" case
-                if "Labo" in cell.text:
-                    data["lab"] = re.findall(RE_FLOAT, cell.text)[0] or None
-                elif "Cours" in cell.text:
-                    course = re.findall(RE_FLOAT, cell.text)
-                    # FIXME: we wrongly find a course for all branches, even if there is none
-                    if len(course) > 0:
-                        data["course"] = course[0]
-                    else:
-                        data["course"] = None
-            elif "moyenne" in cell.text:  # Parse header
-                data["subject"] = re.findall(RE_BRANCH, cell.text)[0]
-                grade_avg = re.findall(RE_FLOAT, cell.text)
-                # Check if a grade was found, otherwise set it to "-"
-                if len(grade_avg) > 0:
-                    data["subject_avg"] = grade_avg[0]
-                else:
-                    data["subject_avg"] = None
-            # Handle sub rows
+def extract_tables(soup):
+    """
+    Extracts the (sub)tables from the HTML content.
+
+    :param soup: The BeautifulSoup object containing the HTML content
+    :return: A list of tables per course containing the parsed data
+    """
+
+    groups = []
+    current_group = []
+
+    trs = list(soup.find_all('tr'))
+    for i, tr in enumerate(trs):
+        if i + 1 < len(trs):
+            next_tr = trs[i + 1]
+            if next_tr.find('td', {'class': 'bigheader'}):
+                current_group.append(tr)
+                groups.append(current_group)
+                current_group = []
             else:
-                if re.match(RE_DATE, cell.text):  # Parse date
-                    data["date"] = date_parser.parse(cell.text).strftime("%Y-%m-%d")
-                elif re.match(RE_STRING, cell.text):  # Parse name
-                    # Check if a subtag div.onclick exists
-                    if cell.findAll("div", {"id": re.compile(r"long__lm_")}):
-                        data["name"] = cell.find(
-                            "div", {"id": re.compile(r"long__lm_")}
-                        ).text.strip()
-                    else:
-                        data["name"] = cell.text
-                elif re.match(RE_FLOAT, cell.text):  # Parse mean, weight and grade
-                    data["mean"] = cell.text
-                    data["weight"] = cells[3].text
-                    data["grade"] = cells[4].text
-                    write_all(data)
-                    break
+                current_group.append(tr)
+        else:
+            current_group.append(tr)
+            groups.append(current_group)
+
+    return groups
 
 
-def write_all(data):
-    # Add data to the df dataframe
-    df.loc[len(df)] = [
-        data["subject"],
-        data["subject_avg"],
-        data["lab"],
-        data["course"],
-        data["date"],
-        data["name"],
-        data["grade"],
-        data["mean"],
-        data["weight"],
-    ]
+def table_to_df(tables):
+    """
+    Converts the tables to pandas DataFrames.
+
+    :param tables: The list of tables to convert
+    :return: A array of pandas DataFrames containing the GAPS grade data
+    """
+
+    dfs = []
+    for table in tables:
+        soup = BeautifulSoup('<table></table>', 'html.parser')
+        table_tag = soup.table
+
+        for tr in table:
+            table_tag.append(tr)
+
+        html_table = str(table_tag)
+        html_io = StringIO(html_table)
+
+        df = pd.read_html(html_io)[0]
+        df.columns = ["Header", "Date", "Description", "Mean", "Weight", "Grade"]
+        dfs.append(df)
+    return dfs
 
 
-def compute_mean():
-    # Extract the subject and subject_avg columns
-    df1 = df[["Subject", "Subject avg"]].drop_duplicates()
-    df2 = df1["Subject avg"]
-    # Convert the subject_avg column to numeric
-    df2 = pd.to_numeric(df2, errors="coerce")
-    return round(df2.mean(), 2)
+def df_to_object(df):
+    """
+    Converts the DataFrames to a key-value dictionary containing the GAPS grade data with the following schema:
+        course: The name of the course
+        grade: The grade of the course
+        course_grade: The grade of the assessments
+        course_data: The DataFrame containing the assessments data
+        lab_grade: The grade of the practical work
+        lab_data: The DataFrame containing the practical work data
+
+    :param df: The DataFrame to convert
+    :return: A key-value dictionary containing the GAPS grade data
+    """
+
+    re_float = r"\d\.\d{1,2}"
+    data = {}
+
+    header = df.iloc[0].to_dict()["Header"]
+
+    data["course"] = header.split(" ")[0] if header else None
+
+    grade = re.findall(re_float, header)
+    data["grade"] = grade[0] if grade else None
+
+    # Extract the course grades
+    subheaders = df.loc[df['Grade'] == 'note']["Header"]
+    course_grade = re.findall(re_float, subheaders.values[0])
+    data["course_grade"] = course_grade[0] if course_grade else None
+
+    # Extract the lab grade if present
+    lab_header = re.findall(re_float, subheaders.values[1]) if len(subheaders.values) > 1 else None
+    data["lab_grade"] = lab_header[0] if lab_header else None
+
+    # Drop the first column of the dataframe since it's not needed anymore
+    df = df.drop(columns=["Header"])
+
+    # Extract the course and lab dataframes
+    if lab_header:
+        data["course_data"] = df.iloc[subheaders.index[0] + 1: subheaders.index[1]].reset_index(drop=True)
+        data["lab_data"] = df.iloc[subheaders.index[1] + 1:].reset_index(drop=True)
+    else:
+        data["course_data"] = df.iloc[subheaders.index[0] + 1:].reset_index(drop=True)
+
+    return data

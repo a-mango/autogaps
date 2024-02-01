@@ -70,15 +70,23 @@ def get_credentials():
     return cred
 
 
-def display_data():
-    cred = get_credentials()
-    data = parser.request_data(cred)
-    parser.parse_data(data)
-    # Print a full width dataframe
-    parser.pd.set_option("display.max_colwidth", 30)
-    print(parser.df)
-    mean = parser.compute_mean()
-    print("Overall mean:", mean)
+def compute_mean(data):
+    """
+    Compute the mean of the grades in the subject key
+
+    :param data: The object containing the parsed GAPS data
+    :return: The mean of the grades
+    :rtype: float
+    """
+
+    grades = [float(course["grade"]) for course in data if course["grade"] is not None]
+    return sum(grades) / len(grades) if grades else 0
+
+
+def display_data(data):
+    for row in data:
+        print("{} : mean {}, assessments {}, practical work {}".format(row["course"], row["grade"], row["course_grade"], row["lab_grade"]))
+    print("Overall mean: {}".format(compute_mean(data)))
 
 
 def main():
@@ -91,7 +99,10 @@ def main():
         if args.login:
             save_credentials()
         else:
-            display_data()
+            cred = get_credentials()
+            data = parser.request_data(cred)
+            data = parser.parse(data)
+            display_data(data)
 
     except KeyboardInterrupt:
         print("\nProgram interrupted by user. Exiting...")
