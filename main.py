@@ -85,7 +85,17 @@ def compute_mean(data):
 
 def display_data(data):
     for row in data:
-        print("{} : mean {}, assessments {}, practical work {}".format(row["course"], row["grade"], row["course_grade"], row["lab_grade"]))
+        print("{}: {}".format(row["course"], row["grade"]))
+
+        assessment_data = row["assessment_data"].drop(columns=["Mean", "Weight"]).to_string(header=False, index=False, justify='left')
+        print("Assessments: {}\n{}".format(row["course_grade"], assessment_data))
+
+        if "practical_work_data" in row and row["practical_work_data"] is not None:
+            practical_work_data = row["practical_work_data"].drop(columns=["Mean", "Weight"]).to_string(header=False, index=False, justify='left')
+            print("Practical work: {}\n{}".format(row["lab_grade"], practical_work_data))
+
+        print("")
+
     print("Overall mean: {}".format(compute_mean(data)))
 
 

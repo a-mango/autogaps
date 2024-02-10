@@ -24,6 +24,11 @@ from bs4 import BeautifulSoup
 import pandas as pd
 from io import StringIO
 
+# Set pandas to wholly display the DataFrames
+pd.set_option("display.max_columns", None)
+pd.set_option("display.max_rows", None)
+pd.set_option("display.width", None)
+
 
 def request_data(cred):
     """
@@ -60,7 +65,8 @@ def request_data(cred):
                 )
                 return None
             print("Successfully retrieved GAPS data")
-            return re.sub(r"\\", "", res.content.decode("utf-8"))
+            content = res.content.decode("utf-8")
+            return re.sub(r"\\", "", content)
 
 
 def parse(content):
@@ -72,6 +78,16 @@ def parse(content):
     """
 
     soup = BeautifulSoup(content, "html.parser")
+    # Find all tags
+    tags = soup.find_all()
+
+    # Iterate over the tags
+    for tag in tags:
+        # Check if the tag's content matches the pattern of incorrect content
+        if re.match(r'^[a-z]+$', tag.string):
+            # If it does, remove the content
+            tag.string.extract()
+            
     tables = extract_tables(soup)
     dfs = table_to_df(tables)
     objects = []
@@ -93,8 +109,13 @@ def extract_tables(soup):
     groups = []
     current_group = []
 
+    # Iterate over the trs and group them by course
     trs = list(soup.find_all('tr'))
     for i, tr in enumerate(trs):
+        td = tr.find('div', text=re.compile(r'.*\[...\].*'))
+        if td:
+            td.decompose()
+
         if i + 1 < len(trs):
             next_tr = trs[i + 1]
             if next_tr.find('td', {'class': 'bigheader'}):
@@ -129,6 +150,7 @@ def table_to_df(tables):
         html_table = str(table_tag)
         html_io = StringIO(html_table)
 
+        print(pd.read_html(html_io))
         df = pd.read_html(html_io)[0]
         df.columns = ["Header", "Date", "Description", "Mean", "Weight", "Grade"]
         dfs.append(df)
@@ -173,9 +195,9 @@ def df_to_object(df):
 
     # Extract the course and lab dataframes
     if lab_header:
-        data["course_data"] = df.iloc[subheaders.index[0] + 1: subheaders.index[1]].reset_index(drop=True)
-        data["lab_data"] = df.iloc[subheaders.index[1] + 1:].reset_index(drop=True)
+        data["assessment_data"] = df.iloc[subheaders.index[0] + 1: subheaders.index[1]].reset_index(drop=True)
+        data["practical_work_data"] = df.iloc[subheaders.index[1] + 1:].reset_index(drop=True)
     else:
-        data["course_data"] = df.iloc[subheaders.index[0] + 1:].reset_index(drop=True)
+        data["assessment_data"] = df.iloc[subheaders.index[0] + 1:].reset_index(drop=True)
 
     return data
